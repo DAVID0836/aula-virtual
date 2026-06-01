@@ -1,11 +1,12 @@
 import mysql.connector
 from mysql.connector import pooling, Error
+import os
 
 dbconfig = {
-    'host': 'localhost',
-    'port': 3307,
+    'host': os.environ.get('DB_HOST', 'localhost'),
+    'port': 3306,
     'user': 'root',
-    'password': '12345',  
+    'password': '1234',
     'database': 'testdb'
 }
 

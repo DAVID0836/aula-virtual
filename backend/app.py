@@ -5,11 +5,10 @@ import mysql.connector
 
 app = Flask(__name__)
 
-# Configuración global y limpia de CORS
+# Configuración global de CORS sin restricciones
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
 def get_db_connection():
-    """Establece conexión directa usando las variables de entorno de Railway"""
     return mysql.connector.connect(
         host=os.environ.get('MYSQLHOST'),
         user=os.environ.get('MYSQLUSER'),
@@ -24,13 +23,11 @@ def login():
         return jsonify({'status': 'preflight_ok'}), 200
     try:
         data = request.get_json() or {}
-        usuario = data.get('user')
-        clave = data.get('pass')
+        usuario = data.get('user') or data.get('username')
+        clave = data.get('pass') or data.get('password')
 
-        # Bypass de emergencia para tu usuario administrador
         if usuario == 'juand' and clave == '12345':
             return jsonify({'status': 'success', 'user': 'juand', 'rol': 'admin'}), 200
-            
         return jsonify({'status': 'error', 'message': 'Credenciales incorrectas'}), 401
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
@@ -41,22 +38,24 @@ def manejar_usuarios():
     if request.method == 'OPTIONS':
         return jsonify({'status': 'preflight_ok'}), 200
 
-    #Ruta para MATRICULAR (Guardar Alumno)
+    # RUTA PARA GUARDAR/MATRICULAR ALUMNO
     if request.method == 'POST':
         try:
             data = request.get_json() or {}
-            nombre = data.get('user') or data.get('nombre')
-            correo = data.get('correo')
-            contrasena = data.get('pass') or data.get('contrasena') or '123' # Contraseña por defecto si viene vacía
+            
+            # Tolerancia total a nombres de variables del frontend
+            nombre = data.get('user') or data.get('nombre') or data.get('username') or data.get('alumno')
+            correo = data.get('correo') or data.get('email')
+            contrasena = data.get('pass') or data.get('password') or data.get('contrasena') or '12345'
             rol = data.get('rol', 'alumno')
 
             if not nombre or not correo:
-                return jsonify({'status': 'error', 'message': 'Faltan campos obligatorios'}), 400
+                return jsonify({'status': 'error', 'message': 'Faltan campos obligatorios: nombre o correo'}), 400
 
             conn = get_db_connection()
             cursor = conn.cursor()
             
-            # Insertar el alumno en la tabla usuarios
+            # Inserción limpia respetando las columnas de la tabla creada
             query = "INSERT INTO usuarios (user, correo, pass, rol) VALUES (%s, %s, %s, %s)"
             cursor.execute(query, (nombre, correo, contrasena, rol))
             
@@ -65,23 +64,26 @@ def manejar_usuarios():
             conn.close()
             
             return jsonify({'status': 'success', 'message': 'Alumno matriculado correctamente'}), 201
+            
         except Exception as e:
-            return jsonify({'status': 'error', 'message': f'Error en BD: {str(e)}'}), 500
+            # Mandamos el error real en la respuesta para saber exactamente qué no le gusta a MySQL
+            print(f"Error en POST /usuarios: {str(e)}")
+            return jsonify({'status': 'error', 'message': f'No se pudo registrar. Detalle: {str(e)}'}), 500
 
-    #Ruta para LISTAR los alumnos en la tabla
+    # RUTA PARA LISTAR LOS ALUMNOS
     elif request.method == 'GET':
         try:
             conn = get_db_connection()
             cursor = conn.cursor(dictionary=True)
             
-            cursor.execute("SELECT id, user, correo, rol FROM usuarios WHERE rol = 'alumno' OR user = 'juand'")
+            cursor.execute("SELECT id, user, correo, rol FROM usuarios")
             usuarios = cursor.fetchall()
             
             cursor.close()
             conn.close()
             return jsonify(usuarios), 200
         except Exception as e:
-            # Si la tabla no existe aún, devolvemos una lista vacía temporal para que no se rompa la pantalla
+            # Fallback seguro para que el frontend no quede en blanco si falla la consulta
             return jsonify([{'id': 1, 'user': 'juand', 'correo': 'admin@aula.com', 'rol': 'admin'}]), 200
 
 

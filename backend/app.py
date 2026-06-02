@@ -1,101 +1,219 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import os
-import mysql.connector
+from config import get_connection
+import datetime
+import traceback
 
 app = Flask(__name__)
 
-# Configuración global de CORS sin restricciones
-CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
-def get_db_connection():
-    return mysql.connector.connect(
-        host=os.environ.get('MYSQLHOST'),
-        user=os.environ.get('MYSQLUSER'),
-        password=os.environ.get('MYSQLPASSWORD'),
-        database=os.environ.get('MYSQLDATABASE'),
-        port=int(os.environ.get('MYSQLPORT', 3306))
-    )
 
-@app.route('/login', methods=['POST', 'OPTIONS'])
+@app.route('/login', methods=['POST'])
 def login():
-    if request.method == 'OPTIONS':
-        return jsonify({'status': 'preflight_ok'}), 200
     try:
-        data = request.get_json() or {}
-        usuario = data.get('user') or data.get('username')
-        clave = data.get('pass') or data.get('password')
+        data = request.get_json()
+        usuario = data.get('user')
+        clave = data.get('pass')
 
         if usuario == 'juand' and clave == '12345':
-            return jsonify({'status': 'success', 'user': 'juand', 'rol': 'admin'}), 200
-        return jsonify({'status': 'error', 'message': 'Credenciales incorrectas'}), 401
+            return jsonify({'status': 'success', 'user': 'juand', 'rol': 'admin', 'correo': 'admin@aula.com'}), 200
+
+        conn = get_connection()
+        if conn is None:
+            return jsonify({'status': 'error', 'mensaje': 'Error de conexión'}), 500
+
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT user, pass, rol, correo FROM usuarios WHERE user = %s AND pass = %s", (usuario, clave))
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+
+        if row:
+            return jsonify({'status': 'success', 'user': row['user'], 'rol': row['rol'], 'correo': row['correo']}), 200
+        return jsonify({'status': 'error', 'mensaje': 'Credenciales incorrectas'}), 401
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'mensaje': str(e)}), 500
 
 
-@app.route('/usuarios', methods=['GET', 'POST', 'OPTIONS'])
-def manejar_usuarios():
-    if request.method == 'OPTIONS':
-        return jsonify({'status': 'preflight_ok'}), 200
+@app.route('/usuarios', methods=['GET', 'POST'])
+def gestionar_usuarios():
+    try:
+        conn = get_connection()
+        if conn is None:
+            return jsonify({'mensaje': 'Error de conexión'}), 500
 
-    # RUTA PARA GUARDAR/MATRICULAR ALUMNO
-    if request.method == 'POST':
-        try:
-            data = request.get_json() or {}
-            
-            # Tolerancia total a nombres de variables del frontend
-            nombre = data.get('user') or data.get('nombre') or data.get('username') or data.get('alumno')
-            correo = data.get('correo') or data.get('email')
-            contrasena = data.get('pass') or data.get('password') or data.get('contrasena') or '12345'
-            rol = data.get('rol', 'alumno')
+        cursor = conn.cursor(dictionary=True)
 
-            if not nombre or not correo:
-                return jsonify({'status': 'error', 'message': 'Faltan campos obligatorios: nombre o correo'}), 400
+        if request.method == 'GET':
+            cursor.execute("SELECT user, pass, correo, rol FROM usuarios")
+            usuarios = cursor.fetchall()
+            cursor.close()
+            conn.close()
+            return jsonify(usuarios)
 
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            
-            # Inserción limpia respetando las columnas de la tabla creada
-            query = "INSERT INTO usuarios (user, correo, pass, rol) VALUES (%s, %s, %s, %s)"
-            cursor.execute(query, (nombre, correo, contrasena, rol))
-            
+        elif request.method == 'POST':
+            d = request.get_json()
+            if not d or not d.get('user') or not d.get('pass') or not d.get('correo'):
+                cursor.close()
+                conn.close()
+                return jsonify({'status': 'error', 'mensaje': 'Faltan campos obligatorios'}), 400
+
+            cursor.execute(
+                "INSERT INTO usuarios (user, pass, correo, rol) VALUES (%s, %s, %s, 'usuario')",
+                (d['user'], d['pass'], d['correo'])
+            )
             conn.commit()
             cursor.close()
             conn.close()
-            
-            return jsonify({'status': 'success', 'message': 'Alumno matriculado correctamente'}), 201
-            
-        except Exception as e:
-            # Mandamos el error real en la respuesta para saber exactamente qué no le gusta a MySQL
-            print(f"Error en POST /usuarios: {str(e)}")
-            return jsonify({'status': 'error', 'message': f'No se pudo registrar. Detalle: {str(e)}'}), 500
+            return jsonify({'status': 'ok'}), 201
 
-    # RUTA PARA LISTAR LOS ALUMNOS
-    elif request.method == 'GET':
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor(dictionary=True)
-            
-            cursor.execute("SELECT id, user, correo, rol FROM usuarios")
-            usuarios = cursor.fetchall()
-            
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'mensaje': str(e)}), 500
+
+
+@app.route('/usuarios/<name>', methods=['PUT', 'DELETE'])
+def alterar_usuario(name):
+    try:
+        conn = get_connection()
+        if conn is None:
+            return jsonify({'status': 'error', 'mensaje': 'Error de conexión'}), 500
+
+        cursor = conn.cursor()
+
+        if request.method == 'DELETE':
+            cursor.execute("DELETE FROM entregas WHERE alumno = %s", (name,))
+            cursor.execute("DELETE FROM usuarios WHERE user = %s", (name,))
+
+        elif request.method == 'PUT':
+            d = request.get_json()
+            cursor.execute(
+                "UPDATE usuarios SET pass = %s, correo = %s WHERE user = %s",
+                (d['pass'], d['correo'], name)
+            )
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return jsonify({'status': 'ok'})
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'mensaje': str(e)}), 500
+
+
+@app.route('/tareas', methods=['GET', 'POST'])
+def gestionar_tareas():
+    try:
+        conn = get_connection()
+        if conn is None:
+            return jsonify({'mensaje': 'Error de conexión'}), 500
+
+        cursor = conn.cursor()
+
+        if request.method == 'GET':
+            cursor.execute("SELECT id, titulo, descripcion, vencimiento, hora, adjunto, estado FROM tareas")
+            tareas = cursor.fetchall()
+            resultado = []
+            for t in tareas:
+                resultado.append({
+                    'id': t[0],
+                    'titulo': t[1],
+                    'descripcion': t[2],
+                    'vencimiento': str(t[3]),
+                    'hora': str(t[4]),
+                    'adjunto': t[5],
+                    'estado': t[6]
+                })
             cursor.close()
             conn.close()
-            return jsonify(usuarios), 200
-        except Exception as e:
-            # Fallback seguro para que el frontend no quede en blanco si falla la consulta
-            return jsonify([{'id': 1, 'user': 'juand', 'correo': 'admin@aula.com', 'rol': 'admin'}]), 200
+            return jsonify(resultado), 200
+
+        elif request.method == 'POST':
+            d = request.get_json()
+            cursor.execute("""
+                INSERT INTO tareas (titulo, descripcion, vencimiento, hora, adjunto, estado)
+                VALUES (%s, %s, %s, %s, %s, 'Publicada')
+            """, (d['titulo'], d.get('descripcion', ''), d['vencimiento'], d['hora'], d.get('adjunto', '')))
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return jsonify({'status': 'ok'}), 201
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'mensaje': str(e)}), 500
 
 
-@app.route('/tareas', methods=['GET'])
-def get_tareas():
-    return jsonify([]), 200
+@app.route('/tareas/<int:id_tarea>', methods=['PUT', 'DELETE'])
+def alterar_tarea(id_tarea):
+    try:
+        conn = get_connection()
+        if conn is None:
+            return jsonify({'status': 'error', 'mensaje': 'Error de conexión'}), 500
 
-@app.route('/entregas', methods=['GET'])
-def get_entregas():
-    return jsonify([]), 200
+        cursor = conn.cursor()
+
+        if request.method == 'DELETE':
+            cursor.execute("DELETE FROM entregas WHERE id_tarea = %s", (id_tarea,))
+            cursor.execute("DELETE FROM tareas WHERE id = %s", (id_tarea,))
+
+        elif request.method == 'PUT':
+            d = request.get_json()
+            cursor.execute("""
+                UPDATE tareas
+                SET titulo = %s, descripcion = %s, vencimiento = %s,
+                    hora = %s, adjunto = %s, estado = %s
+                WHERE id = %s
+            """, (d['titulo'], d['descripcion'], d['vencimiento'],
+                  d['hora'], d.get('adjunto', ''), d['estado'], id_tarea))
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return jsonify({'status': 'ok'})
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'mensaje': str(e)}), 500
+
+
+@app.route('/entregas', methods=['GET', 'POST'])
+def gestionar_entregas():
+    try:
+        conn = get_connection()
+        if conn is None:
+            return jsonify({'mensaje': 'Error de conexión'}), 500
+
+        cursor = conn.cursor(dictionary=True)
+
+        if request.method == 'GET':
+            cursor.execute("SELECT * FROM entregas")
+            entregas = cursor.fetchall()
+            cursor.close()
+            conn.close()
+            return jsonify(entregas)
+
+        elif request.method == 'POST':
+            d = request.get_json()
+            ahora = datetime.datetime.now()
+            fecha_envio = ahora.strftime("%Y-%m-%d")
+            hora_envio = ahora.strftime("%H:%M")
+            cursor.execute("""
+                INSERT INTO entregas (id_tarea, alumno, archivo_evidencia, fecha_entrega, hora_entrega, estado_entrega)
+                VALUES (%s, %s, %s, %s, %s, 'Entregada')
+            """, (d['id_tarea'], d['alumno'], d['archivo_evidencia'], fecha_envio, hora_envio))
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return jsonify({'status': 'Evidencia registrada con éxito'}), 201
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'mensaje': str(e)}), 500
 
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port)
+    app.run(debug=True, host='0.0.0.0', port=5000)

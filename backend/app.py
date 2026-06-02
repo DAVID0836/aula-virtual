@@ -4,7 +4,7 @@ import os
 
 app = Flask(__name__)
 
-# CORS ultra permisivo
+# Configuración limpia de CORS a nivel global
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
 @app.route('/login', methods=['POST', 'OPTIONS'])
@@ -17,11 +17,11 @@ def login():
         usuario = data.get('user')
         clave = data.get('pass')
 
-        # BYPASS DE INGENIERÍA: Si es tu usuario, responde de inmediato SIN ir a la base de datos
+        # BYPASS ABSOLUTO: Respuesta instantánea para juand, sin tocar archivos externos ni BD
         if usuario == 'juand' and clave == '12345':
             return jsonify({'status': 'success', 'user': 'juand', 'rol': 'admin'}), 200
-
-        # Si no es el usuario de prueba, intentamos base de datos de forma aislada
+        
+        # Intento seguro de base de datos
         try:
             from config import get_connection
             conn = get_connection()
@@ -36,7 +36,8 @@ def login():
             else:
                 return jsonify({'status': 'error', 'message': 'Credenciales incorrectas'}), 401
         except Exception as db_error:
-            return jsonify({'status': 'error', 'message': f'Error de base de datos: {str(db_error)}'}), 500
+            # Si la BD truena, devolvemos un JSON válido para que el navegador NO tire error de CORS
+            return jsonify({'status': 'error', 'message': f'Fallo de conexion BD: {str(db_error)}'}), 500
 
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500

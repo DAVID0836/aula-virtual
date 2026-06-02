@@ -6,6 +6,7 @@ import datetime
 app = Flask(__name__)
 
 CORS(app, resources={r"/*": {"origins": "*"}})
+# actualizando cors
 
 
 @app.route('/login', methods=['POST'])

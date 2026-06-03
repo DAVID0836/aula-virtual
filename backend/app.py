@@ -1,16 +1,22 @@
 from flask import Flask, request, jsonify
-from flask_cors import CORS
 from config import get_connection
 import datetime
 import traceback
 
 app = Flask(__name__)
 
-CORS(app, origins="*", allow_headers=["Content-Type", "Authorization"], methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+# CORS manual - funciona en Railway sin flask-cors
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response
 
-
-@app.route('/login', methods=['POST'])
+@app.route('/login', methods=['POST', 'OPTIONS'])
 def login():
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
     try:
         data = request.get_json()
         usuario = data.get('user')
@@ -37,8 +43,10 @@ def login():
         return jsonify({'status': 'error', 'mensaje': str(e)}), 500
 
 
-@app.route('/usuarios', methods=['GET', 'POST'])
+@app.route('/usuarios', methods=['GET', 'POST', 'OPTIONS'])
 def gestionar_usuarios():
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
     try:
         conn = get_connection()
         if conn is None:
@@ -74,8 +82,10 @@ def gestionar_usuarios():
         return jsonify({'status': 'error', 'mensaje': str(e)}), 500
 
 
-@app.route('/usuarios/<name>', methods=['PUT', 'DELETE'])
+@app.route('/usuarios/<name>', methods=['PUT', 'DELETE', 'OPTIONS'])
 def alterar_usuario(name):
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
     try:
         conn = get_connection()
         if conn is None:
@@ -104,8 +114,10 @@ def alterar_usuario(name):
         return jsonify({'status': 'error', 'mensaje': str(e)}), 500
 
 
-@app.route('/tareas', methods=['GET', 'POST'])
+@app.route('/tareas', methods=['GET', 'POST', 'OPTIONS'])
 def gestionar_tareas():
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
     try:
         conn = get_connection()
         if conn is None:
@@ -147,8 +159,10 @@ def gestionar_tareas():
         return jsonify({'status': 'error', 'mensaje': str(e)}), 500
 
 
-@app.route('/tareas/<int:id_tarea>', methods=['PUT', 'DELETE'])
+@app.route('/tareas/<int:id_tarea>', methods=['PUT', 'DELETE', 'OPTIONS'])
 def alterar_tarea(id_tarea):
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
     try:
         conn = get_connection()
         if conn is None:
@@ -180,8 +194,10 @@ def alterar_tarea(id_tarea):
         return jsonify({'status': 'error', 'mensaje': str(e)}), 500
 
 
-@app.route('/entregas', methods=['GET', 'POST'])
+@app.route('/entregas', methods=['GET', 'POST', 'OPTIONS'])
 def gestionar_entregas():
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
     try:
         conn = get_connection()
         if conn is None:

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-const API_URL = "https://scintillating-upliftment-production.up.railway.app";
+const API_URL = "";
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);

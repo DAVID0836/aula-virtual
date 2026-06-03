@@ -3,7 +3,21 @@ from config import get_connection
 import datetime
 import traceback
 
-app = Flask(__name__)
+
+import os
+from flask import send_from_directory
+
+app = Flask(__name__, static_folder='dist', static_url_path='')
+
+@app.route('/')
+def serve():
+    return send_from_directory(app.static_folder, 'index.html')
+
+@app.route('/<path:path>')
+def serve_static(path):
+    if os.path.exists(os.path.join(app.static_folder, path)):
+        return send_from_directory(app.static_folder, path)
+    return send_from_directory(app.static_folder, 'index.html')
 
 # CORS manual - funciona en Railway sin flask-cors
 @app.after_request
